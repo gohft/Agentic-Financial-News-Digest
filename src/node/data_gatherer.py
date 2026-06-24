@@ -14,7 +14,7 @@ logger = logging.getLogger("function_node")
 
 def convert_pubdate_to_specific_timezone(
     pubdate_str: str, timezone: ZoneInfo
-) -> datetime.datetime:
+) -> datetime:
     """
     Convert the published date (in RSS string format) of the news article
     to datetime in specific time zone for accurate comparison.
