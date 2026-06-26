@@ -34,19 +34,22 @@ def main(cfg: DictConfig) -> SharedState:
     # get the configurations
     database_cfg = cfg.database
     node_cfg = cfg.node
+    email_cfg = cfg.email
 
     # get the compiled graph
-    app = build_graph(database_cfg, node_cfg)
+    app = build_graph(database_cfg, node_cfg, email_cfg)
 
     # save the graph diagram with conditional edges labeled
     # edges (start, end): label
     # edge_labels = {
-    #     ("data gatherer",    "__end__"):           "no articles",
+    #     ("data gatherer",    "email sender"):      "no articles",
     #     ("data gatherer",    "memory retrieval"):  "articles extracted",
-    #     ("summary generator","summary storage"):   "threshold exceeded",
+    #     ("summary generator","email sender"):      "threshold exceeded",
     #     ("summary generator","summary critic"):    "below threshold",
-    #     ("summary critic",   "summary storage"):   "approved",
+    #     ("summary critic",   "email sender"):      "approved",
     #     ("summary critic",   "summary generator"): "rejected",
+    #     ("email sender",   "summary storage"):     "summaries present",
+    #     ("email sender",   "__end__"):             "summaries absent",
     # }
     # # return node and edges of graph
     # drawn_graph = app.get_graph()
@@ -61,7 +64,7 @@ def main(cfg: DictConfig) -> SharedState:
 
     # png_bytes = drawn_graph.draw_mermaid_png()
 
-    # with open("graph_diagram_labels.png", "wb") as f:
+    # with open("graph_diagram_complete.png", "wb") as f:
     #     f.write(png_bytes)
     #     logger.info("Graph diagram is drawn.")
 
@@ -111,19 +114,19 @@ def main(cfg: DictConfig) -> SharedState:
     langfuse_client.flush()
 
     # look at state of graph
-    print("Graph executed, the final state is:")
-    print(f"Number of current summary: {len(result['current_summary'])}")
-    for i in result["current_summary"]:
-        print(f"title: {i.title}\n")
-        print(f"content: {i.content}\n")
+    # print("Graph executed, the final state is:")
+    # print(f"Number of current summary: {len(result['current_summary'])}")
+    # for i in result["current_summary"]:
+    #     print(f"title: {i.title}\n")
+    #     print(f"content: {i.content}\n")
 
-    print(f"Number of critic feedback: {len(result['critic_feedback'])}")
-    for i in result["critic_feedback"]:
-        print(i)
-        print("\n")
+    # print(f"Number of critic feedback: {len(result['critic_feedback'])}")
+    # for i in result["critic_feedback"]:
+    #     print(i)
+    #     print("\n")
 
-    print(f"approval status: {result['approved']}\n")
-    print(f"critic count: {result['critic_count']}\n")
+    # print(f"approval status: {result['approved']}\n")
+    # print(f"critic count: {result['critic_count']}\n")
 
     return result
 

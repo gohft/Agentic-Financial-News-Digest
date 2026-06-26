@@ -1,3 +1,4 @@
 defaults:
   - database: chromadb
   - node: llm
+  - email: gmail

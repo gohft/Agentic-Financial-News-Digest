@@ -10,8 +10,6 @@ setup_logging()
 logger = logging.getLogger("llm_node")
 
 
-# no longer using tools since the evaluation just required comparsion between summary and original text (both provided)
-# moreover, deciding if summaries is approved uses deterministic algorithm, so no tool call required
 class SummaryCritic:
     """
     Use LLM model to provide feedback on each of the summaries generated.
@@ -51,6 +49,9 @@ class SummaryCritic:
         self.model_args = OmegaConf.to_container(llm_cfg["model_args"])
 
         try:
+            # no tools binded to LLM since all information required for evaluation is provided
+            # and LLM should have ability to do evaluation
+            # setting approval status follows a deterministic algorithm, so no tool needed
             self.llm = get_llm(self.provider, self.model_args)
 
             # set the model to output each summary evaluation as Feedback object
@@ -58,6 +59,7 @@ class SummaryCritic:
             self.structured_llm = self.llm.with_structured_output(
                 Feedback, method="json_mode"
             )
+
             logger.info("Set the LLM for summary critic.")
         except ValueError as e:
             logger.error(f"Failure to set LLM to provide feedback for summaries: {e}")

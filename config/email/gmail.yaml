@@ -1,0 +1,5 @@
+smtp_password: ${oc.env:smtp_password}
+sender: ${oc.env:sender}
+recipient: ${oc.env:recipient}
+port: ${oc.env:port}
+max_retries: 3

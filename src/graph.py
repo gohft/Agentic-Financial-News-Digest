@@ -10,6 +10,7 @@ from src.node.data_gatherer import data_gatherer_node
 from src.node.memory_retrieval import SummaryDatabase
 from src.node.summary_generator import SummaryGenerator
 from src.node.summary_critic import SummaryCritic
+from src.node.email_sender import EmailSender
 
 setup_logging()
 logger = logging.getLogger("graph")
@@ -18,26 +19,21 @@ logger = logging.getLogger("graph")
 #########################
 # conditional edges logic
 #########################
-
-# Email node and end
-
-
-# EDIT to direct to email instead of to END
 def check_gathered_data_present(state: SharedState) -> str:
     """
     If there are news articles extracted after the `data gatherer` node,
     move to `memory retrieval` node to get past summaries that have similar
-    content as the articles, else skip directly to end of graph.
+    content as the articles, else skip directly to `email sender`.
 
     Args:
         state: Common graph state across the graph.
 
     Returns:
-        The name of the next node (`end` or `memory retrieval`) from `data gatherer` node.
+        The name of the next node (`email sender` or `memory retrieval`) from `data gatherer` node.
     """
     if not state["gathered_data"]:
-        logger.info("No articles extracted from websites, ending the graph.")
-        return "end"
+        logger.info("No articles extracted from websites, moving to email sender node.")
+        return "email sender"
 
     logger.info("Articles extracted from websites, moving to memory retrieval node.")
     return "memory retrieval"
@@ -46,7 +42,7 @@ def check_gathered_data_present(state: SharedState) -> str:
 def check_critic_count_exceeded(state: SharedState, threshold: int = 2) -> str:
     """
     If the `critic_count` in state has reached the threshold after the `summary generator` node,
-    skip the `summary critic` node and move to `summary storage` node to store the summaries,
+    skip the `summary critic` node and move to `email sender` node to email the summaries to user,
     else move to `summary critic` node for summary evaluation.
 
     Args:
@@ -55,15 +51,15 @@ def check_critic_count_exceeded(state: SharedState, threshold: int = 2) -> str:
                 Default is 2.
 
     Returns:
-        The name of the next node (`summary storage` or `summary critic`) from `summary generator` node.
+        The name of the next node (`email sender` or `summary critic`) from `summary generator` node.
     """
     critic_count = state["critic_count"]
     # reach threshold
     if critic_count >= threshold:
         logger.info(
-            f"Critic count: {critic_count} exceeded critic threshold: {threshold}, skipping critic node, moving to storage node."
+            f"Critic count: {critic_count} exceeded critic threshold: {threshold}, skipping critic node, moving to email sender node."
         )
-        return "summary storage"
+        return "email sender"
 
     logger.info(
         f"Critic count: {critic_count} below critic threshold: {threshold}, moving to critic node."
@@ -74,7 +70,7 @@ def check_critic_count_exceeded(state: SharedState, threshold: int = 2) -> str:
 def check_summary_approval_status(state: SharedState) -> str:
     """
     If the `approved` in state is True after the `summary critic` node,
-    move to `summary storage` node to store the summaries, else move to
+    move to `email sender` node to send summaries to user, else move to
     `summary generator` node for regenerate the summaries following the
     feedback from the critic.
 
@@ -82,13 +78,13 @@ def check_summary_approval_status(state: SharedState) -> str:
         state: Common graph state across the graph.
 
     Returns:
-        The name of the next node (`summary storage` or `summary generator`) from `summary critic` node.
+        The name of the next node (`email sender` or `summary generator`) from `summary critic` node.
     """
     approval_status = state["approved"]
     # if approved
     if approval_status:
-        logger.info("Summary approved by critic, moving to storage node.")
-        return "summary storage"
+        logger.info("Summary approved by critic, moving to email sender node.")
+        return "email sender"
 
     # not approved, regenerate
     logger.info(
@@ -97,10 +93,53 @@ def check_summary_approval_status(state: SharedState) -> str:
     return "summary generator"
 
 
+def check_summary_present(state: SharedState) -> str:
+    """
+    If `current_summary` in state is empty list, move to END node.
+
+    If non-empty, filter to get a list of summaries that have both non-empty strings
+    for title and content. If this list is empty, move to END node, else,
+    move to `summary storage` node to store these complete summaries in vector database.
+
+    Args:
+        state: Common graph state across the graph.
+
+    Returns:
+        The name of the next node (`end` or `summary storage`) from `email sender` node.
+    """
+    # get summaries generated
+    generated_summaries = state["current_summary"]
+
+    # if non empty list
+    if generated_summaries:
+        # filter for summaries that have title and content non empty string
+        complete_summaries = [
+            sm for sm in generated_summaries if sm.title.strip() and sm.content.strip()
+        ]
+
+        # exist complete summaries
+        if complete_summaries:
+            logger.info("Summaries present, moving to summary storage node.")
+            return "summary storage"
+        # no all summaries have either missing title or content, no logging
+        else:
+            logger.info(
+                "All summaries generated are incomplete, no storage of summaries, moving to END node."
+            )
+            return "end"
+
+    logger.info("No summary generated, moving to END node.")
+    return "end"
+
+
 #######
 # Graph
 #######
-def build_graph(database_cfg: DictConfig, node_cfg: DictConfig) -> CompiledStateGraph:
+def build_graph(
+    database_cfg: DictConfig,
+    node_cfg: DictConfig,
+    email_cfg: DictConfig,
+) -> CompiledStateGraph:
     """
     Build the agentic workflow graph containing the `SharedState` using LangGraph.
     Define the nodes, the edges and the edges' logic and return the compiled graph.
@@ -108,6 +147,7 @@ def build_graph(database_cfg: DictConfig, node_cfg: DictConfig) -> CompiledState
     Args:
         database_cfg: Configuration for the vector database to use to store past summaries.
         node_cfg: Configurations for the summary generator and summary critic LLM.
+        email_cfg: Configurations for the email sender.
 
     Returns:
         The compiled graph that can be executed when initial state is provided.
@@ -121,6 +161,9 @@ def build_graph(database_cfg: DictConfig, node_cfg: DictConfig) -> CompiledState
     # set LLM for the summary generator and critic nodes
     summary_generator = SummaryGenerator(node_cfg)
     summary_critic = SummaryCritic(node_cfg)
+
+    # set email sender
+    email_sender = EmailSender(email_cfg)
 
     # create a state graph
     graph = StateGraph(SharedState)
@@ -142,9 +185,12 @@ def build_graph(database_cfg: DictConfig, node_cfg: DictConfig) -> CompiledState
         retry=RetryPolicy(max_attempts=3),
     )
 
+    graph.add_node("email sender", email_sender.send_email)
+
     # use `add_summaries` function from summary database to add summaries generated
     graph.add_node("summary storage", summary_database.add_summaries)
 
+    #############
     # add the edges and logic
     graph.add_edge(START, "data gatherer")
 
@@ -152,7 +198,10 @@ def build_graph(database_cfg: DictConfig, node_cfg: DictConfig) -> CompiledState
     graph.add_conditional_edges(
         "data gatherer",
         check_gathered_data_present,
-        {"end": END, "memory retrieval": "memory retrieval"},
+        {
+            "email sender": "email sender",
+            "memory retrieval": "memory retrieval",
+        },
     )
     graph.add_edge("memory retrieval", "summary generator")
 
@@ -160,7 +209,10 @@ def build_graph(database_cfg: DictConfig, node_cfg: DictConfig) -> CompiledState
     graph.add_conditional_edges(
         "summary generator",
         check_critic_count_exceeded,
-        {"summary storage": "summary storage", "summary critic": "summary critic"},
+        {
+            "email sender": "email sender",
+            "summary critic": "summary critic",
+        },
     )
 
     # conditional edge from summary critic, depend on approval status after feedback
@@ -168,8 +220,18 @@ def build_graph(database_cfg: DictConfig, node_cfg: DictConfig) -> CompiledState
         "summary critic",
         check_summary_approval_status,
         {
-            "summary storage": "summary storage",
+            "email sender": "email sender",
             "summary generator": "summary generator",
+        },
+    )
+
+    # conditional edge from email sender, depend if summaries are generated
+    graph.add_conditional_edges(
+        "email sender",
+        check_summary_present,
+        {
+            "summary storage": "summary storage",
+            "end": END,
         },
     )
 
