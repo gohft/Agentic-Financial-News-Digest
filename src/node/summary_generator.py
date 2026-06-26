@@ -1,11 +1,10 @@
 from omegaconf import DictConfig, OmegaConf
 import logging
-from typing import List
 from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
 
 from src.utils.logging import setup_logging
 from src.utils.llm_helper import get_llm
-from src.node.state_and_dataclass import SharedState, ArticleSummaryList
+from src.state_and_dataclass import SharedState, ArticleSummaryList, ArticleSummary
 
 setup_logging()
 logger = logging.getLogger("llm_node")
@@ -13,17 +12,24 @@ logger = logging.getLogger("llm_node")
 
 class SummaryGenerator:
     """
-    Use LLM model to generate summary for the significant news article,
-    ensuring that the summary does not repeat information already covered in previous summaries.
+    Use LLM model to generate summary for each significant news article,
+    among all extracted news article, ensuring that the summary does not repeat
+    information already covered in previous summaries.
     """
 
-    def __init__(self, cfg: DictConfig):
+    def __init__(self, cfg: DictConfig) -> None:
         """
         Set the LLM to use to generated the summaries from the extracted news articles and
         past summaries using the configuration file that contains the model arguments.
 
         LLM will output the generated summaries as a structured output so as to ensure the
         summaries can be added into the vector database.
+
+        Args:
+            cfg: Configurations for the summary generator LLM.
+
+        Raise:
+            ValueError if LLM cannot be initialized when the provider is not in allowed list.
         """
         # get config for the summary generator
         llm_cfg = cfg["generator"]
@@ -34,17 +40,16 @@ class SummaryGenerator:
         # get llm provider
         self.provider = llm_cfg["provider"]
 
-        # use the provider and model arguments to set the llm to use
-        # get the model arguments and convert to dictionary type
+        # convert model arguments from config to dictionary type
         # model arguments must have keys that match the input arguments of the model
         self.model_args = OmegaConf.to_container(llm_cfg["model_args"])
 
         try:
             self.llm = get_llm(self.provider, self.model_args)
 
-            # set the model to output a the object of type ArticleSummaryList (list type not allowed)
-            # "json_mode" allow LLM to output in JSON format (following system promt) before parsing to ArticleSummaryList
-            # ArticleSummary object type required to insert the summary into database
+            # set the model to output object of type ArticleSummaryList (list type not allowed)
+            # "json_mode" allow LLM to first output in JSON format (following system promt)
+            # before parsing to ArticleSummaryList, reducing chances of mistakes
             # no tools assigned to LLM since the task is to do summarization and all information provided
             self.structured_llm = self.llm.with_structured_output(
                 ArticleSummaryList, method="json_mode"
@@ -54,11 +59,18 @@ class SummaryGenerator:
             logger.error(f"Failure to set LLM to generate summaries: {e}")
             raise
 
-    def _create_user_prompt(self, state: SharedState) -> str:
+    @staticmethod
+    def _create_user_prompt(state: SharedState) -> str:
         """
         Create the user prompt for the model.
         User request contains the all the information to generate the summaries, including
         the extracted news articles, the past summaries and the critic feedback.
+
+        Args:
+            state: Common graph state across the graph.
+
+        Returns:
+            The HumanMessage that will invoke response from LLM.
         """
 
         # get all the necessary information needed to generate the summaries
@@ -79,7 +91,9 @@ class SummaryGenerator:
                 f"Title: {summary.title}\nContent: {summary.content}"
                 for summary in similar_past_summaries
             )
-            logger.info("Added similar past summaries into user prompt")
+            logger.info(
+                "Added similar past summaries into summary generator user prompt"
+            )
 
         # feedback can be empty list, set to None following LLM system prompt
         feedback_block = "None"
@@ -88,15 +102,22 @@ class SummaryGenerator:
                 f"Title: {feedback.title}\nComments: {feedback.comments}"
                 for feedback in summary_feedback
             )
-            logger.info("Added feedback from summary critic into user prompt")
+            logger.info(
+                "Added feedback from summary critic into summary generator user prompt"
+            )
 
+        logger.info("Created summary generator user prompt")
+
+        # output format matches the input stated in LLM system prompt
         return (
             f"=== GATHERED ARTICLES ===\n{articles_block}\n\n"
             f"=== PREVIOUS DIGEST ===\n{past_summaries_block}\n\n"
             f"=== CRITIC FEEDBACK ===\n{feedback_block}\n\n"
         )
 
-    def __call__(self, state: SharedState) -> dict:
+    def __call__(
+        self, state: SharedState
+    ) -> dict[str, list[AnyMessage] | list[ArticleSummary]]:
         """
         Set the class to be callable.
         Invoke the LLM to generate summary when the class is called.
@@ -108,25 +129,40 @@ class SummaryGenerator:
         this reduces the chance of exceeding context window and hallucination.
         This forces model to generate new summaries instead of correcting previous summaries,
         as multiple corrections could lead to model arguing/explaining with itself.
+
+        Each generated summary is of type ArticleSummary so as to be added to vector database.
+        Filter to get at max the first 5 objects in list, since LLM might not follow prompt
+        and output more than 5 summaries, but expected only max of 5 summaries in daily digest.
+
+        Args:
+            state: Common graph state across the graph.
+
+        Returns:
+            Updated `messages` and `current_summary` field in the shared state.
         """
         # create the user request
         user_prompt = self._create_user_prompt(state)
 
         # do not pass messages from shared state
         # start new conversation by passing only system prompt and user request
-        messages: List[AnyMessage] = [
+        messages: list[AnyMessage] = [
             SystemMessage(content=self.system_prompt),
             HumanMessage(content=user_prompt),
         ]
 
-        # return structured output in List[ArticleSummary] and not AnyMessage type
+        # return structured output in list[ArticleSummary] and not AnyMessage type
         # do not need to append to messages since this is not part of conversation
-        # and do not need to repeat since store in `current_summary` in state
         generated_summaries = self.structured_llm.invoke(messages)
 
         logger.info("Summaries generated by summary generator.")
+        logger.info(
+            f"Number of summaries generated is: {len(generated_summaries.articles)}"
+        )
 
+        # update the state with the newly generated summaries and add the LLM prompts
         return {
             "messages": messages,  # record each of the user input
-            "current_summary": generated_summaries.articles,  # get the list
+            "current_summary": generated_summaries.articles[
+                :5
+            ],  # filter to get max of 5
         }

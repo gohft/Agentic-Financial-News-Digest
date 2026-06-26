@@ -25,6 +25,14 @@ LOGGING_CONFIG = {
             "backupCount": 3,
             "encoding": "utf-8",
         },
+        "graph": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": "logs/graph.log",
+            "formatter": "standard",
+            "maxBytes": 5_000_000,
+            "backupCount": 3,
+            "encoding": "utf-8",
+        },
         "console": {
             "class": "logging.StreamHandler",  # print to console
             "formatter": "standard",
@@ -38,6 +46,11 @@ LOGGING_CONFIG = {
         },
         "llm_node": {
             "handlers": ["llm_node", "console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+        "graph": {
+            "handlers": ["graph", "console"],
             "level": "INFO",
             "propagate": False,
         },

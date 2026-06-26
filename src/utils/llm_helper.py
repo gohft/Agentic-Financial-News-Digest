@@ -1,7 +1,5 @@
 from typing import Any
 from langchain_core.language_models.chat_models import BaseChatModel
-
-# from langchain_openai import ChatOpenAI
 from langchain_ollama import ChatOllama
 
 
@@ -10,14 +8,18 @@ def get_llm(provider: str, model_args: dict[str, Any]) -> BaseChatModel:
     Initialize and return an LLM based on the provider and model arguments.
 
     Args:
-        provider:   "ollama" (case-insensitive)
-        model_args: dictionary of model arguments.
+        provider: Name that matches the library that will load the LLM.
+        model_args: Dictionary of model arguments, keys depends on model to use.
+
     Returns:
-        A LangChain chat model instance ready for use in a LangGraph node.
+        A LangChain LLM object initialized with the specified model arguments.
+
+    Raise:
+        ValueError if the provider does match any of the supported providers.
     """
-    # dictionary map between name of provider and the langchain model
+    # dictionary map between name of provider and the corresponding library.
+    # add more providers if using models from different libraries like OpenAI
     providers = {
-        # "openai": ChatOpenAI,
         "ollama": ChatOllama,
     }
 

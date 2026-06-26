@@ -6,7 +6,7 @@ from chromadb.utils import embedding_functions
 import logging
 
 from src.utils.logging import setup_logging
-from src.node.state_and_dataclass import SharedState, ArticleSummary
+from src.state_and_dataclass import SharedState, ArticleSummary
 
 setup_logging()
 logger = logging.getLogger("function_node")
@@ -23,6 +23,9 @@ class SummaryDatabase:
         """
         Set up the ChromaDB vector database with a persistent storage to save all the documents.
         Create a collection to store all the document and specify the embedding function.
+
+        Args:
+            cfg: Configurations of the vector database to use to store past summaries.
         """
         self.timezone = ZoneInfo(cfg["timezone"])
         # create client to save data to local disk at the specified directory path for persistent storage
@@ -113,7 +116,9 @@ class SummaryDatabase:
             f"Added current summaries into summary database, updated database size is: {self.collection.count()}"
         )
 
-    def query_similar_summaries(self, state: SharedState) -> dict:
+    def query_similar_summaries(
+        self, state: SharedState
+    ) -> dict[str, list[ArticleSummary]]:
         """
         Extract out any previously generated summaries in the summmary database that are similar
         to any of the current news articles extracted.
@@ -123,6 +128,8 @@ class SummaryDatabase:
 
         Calculate similarity score between each pair of news article and past summary,
         and if it exceeds a threshold, the past summary is extracted out.
+        Pairwise calculation prevents dilution of similarity score when there is large number
+        of articles extracted, ensuring correct extraction of past summaries.
 
         Args:
             state: Common graph state across the graph.

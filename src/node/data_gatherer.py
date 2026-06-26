@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import logging
 
 from src.utils.logging import setup_logging
-from src.node.state_and_dataclass import SharedState, Article
+from src.state_and_dataclass import SharedState, Article
 
 setup_logging()
 logger = logging.getLogger("function_node")
@@ -59,7 +59,7 @@ def extract_article_text(input_url: str) -> str:
         return ""
 
 
-def data_gatherer_node(state: SharedState) -> dict:
+def data_gatherer_node(state: SharedState) -> dict[str, list[Article]]:
     """
     Fetch up to a max number of financial news articles published in the last 24 hours
     from predefined RSS feed URLs, and populates the `gathered_data` field in shared state.
@@ -73,8 +73,8 @@ def data_gatherer_node(state: SharedState) -> dict:
     """
     # the RSS feed url for the specific websites to get news articles from
     RSS_FEEDS = {
-        "CNBC Finance": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664",
         "CNA Business": "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml&category=6936",
+        "CNBC Finance": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664",
     }
 
     # set maximum article to extract per RSS url
