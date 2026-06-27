@@ -13,8 +13,12 @@ Key features include:
 
 **Observability with LangFuse:** Provides end-to-end tracing, cost tracking, latency monitoring, and support for offline evaluation across all workflow nodes.
 
-Note: [Claude AI](https://claude.ai) was used to help with the coding.
+<figure>
+  <img src="images/digest_example.png" alt="Example of finance digest">
+  <figcaption align="center"><i>Image: Example of finance digest generated.</i></figcaption>
+</figure>
 
+Note: [Claude AI](https://claude.ai) was used to help with the coding.
 ## Tech Stack
 **Workflow:** LangGraph, Ollama, sentence-transformers, feedparser, trafilatura, smtplib
 
