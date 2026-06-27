@@ -17,8 +17,11 @@ Note: [Claude AI](https://claude.ai) was used to help with the coding.
 
 ## Tech Stack
 **Workflow:** LangGraph, Ollama, sentence-transformers, feedparser, trafilatura, smtplib
+
 **Configuration Management:** Hydra and pydantic
+
 **LLM Observability:** LangFuse
+
 **Vector Database:** ChromaDB
 
 ## Workflow
@@ -27,6 +30,7 @@ Note: [Claude AI](https://claude.ai) was used to help with the coding.
   <figcaption align="center"><i>Figure 1: Workflow diagram with conditional edges logic.</i></figcaption>
 </figure>
 
+<br>
 This workflow orchestrates a sequence of specialized nodes for article extraction, memory retrieval, summary generation, quality review and email sending to generate and email a daily financial news digest. The graph uses conditional edges to handle missing data, failed generations, and bounds the reflection loop.
 
 ### 1) data gatherer
